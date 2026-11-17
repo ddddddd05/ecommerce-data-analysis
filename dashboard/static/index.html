@@ -128,8 +128,11 @@ async function main() {
   const T = Object.fromEntries(await Promise.all(names.map(async n => [n, await get(n)])));
 
   // 最近一个完整年度和上一年：从数据推算，不写死年份
-  const full = T.kpi_yearly.filter(r => !r.is_partial).sort((a, b) => a.year - b.year);
-  const cur = full[full.length - 1], prev = full[full.length - 2];
+  // 没有完整年度时（数据不足 12 个月）退回最近一年，并且不显示同比
+  const years = [...T.kpi_yearly].sort((a, b) => a.year - b.year);
+  const full = years.filter(r => !r.is_partial);
+  const cur = full[full.length - 1] || years[years.length - 1];
+  const prev = full.length >= 2 ? full[full.length - 2] : null;
   document.querySelectorAll(".y").forEach(e => e.textContent = cur.year);
   const months = T.kpi_monthly.map(r => r.month).sort();
   const first = T.kpi_monthly.find(r => r.month === months[0]), last = T.kpi_monthly.find(r => r.month === months[months.length - 1]);
@@ -138,12 +141,18 @@ async function main() {
   document.getElementById("k-rev").textContent = money(cur.revenue_usd);
   document.getElementById("k-ord").textContent = cur.orders.toLocaleString();
   document.getElementById("k-cvr").textContent = pct(cur.cvr, 2);
-  document.getElementById("k-aov").textContent = "$" + cur.aov_usd.toFixed(2);
+  document.getElementById("k-aov").textContent = cur.aov_usd == null ? "—" : "$" + cur.aov_usd.toFixed(2);
   if (prev) {
     delta("d-rev", cur.revenue_usd, prev.revenue_usd, false, prev.year);
     delta("d-ord", cur.orders, prev.orders, false, prev.year);
     delta("d-cvr", cur.cvr, prev.cvr, true, prev.year);
     delta("d-aov", cur.aov_usd, prev.aov_usd, false, prev.year);
+  } else {
+    ["d-rev", "d-ord", "d-cvr", "d-aov"].forEach(id => {
+      const el = document.getElementById(id);
+      el.className = "delta";
+      el.textContent = cur.is_partial ? "不完整年度，不做同比" : "没有上一完整年度，不做同比";
+    });
   }
 
   const m = T.kpi_monthly.filter(r => !r.is_partial).sort((a, b) => a.month.localeCompare(b.month));
@@ -190,7 +199,7 @@ async function main() {
   table("t-channel", ["渠道", "类型", "访问数", "访问占比", "转化率", "每次访问收入", "跳出率"],
     T.channel_yearly.filter(r => r.year === cur.year).sort((a, b) => b.sessions - a.sessions).map(r =>
       `<tr><td>${r.channel}</td><td>${r.channel_type}</td><td>${r.sessions.toLocaleString()}</td><td>${pct(r.session_share)}</td>
-       <td>${pct(r.cvr, 2)}</td><td>$${r.revenue_per_session_usd.toFixed(2)}</td><td>${pct(r.bounce_rate)}</td></tr>`));
+       <td>${pct(r.cvr, 2)}</td><td>${r.revenue_per_session_usd == null ? "—" : "$" + r.revenue_per_session_usd.toFixed(2)}</td><td>${pct(r.bounce_rate)}</td></tr>`));
 
   const tag = v => v.includes("新版胜出") ? `<span class="tag win">${v}</span>`
                  : v.includes("原版胜出") ? `<span class="tag lose">${v}</span>` : `<span class="tag na">${v}</span>`;
@@ -252,10 +261,10 @@ async function main() {
   const rep = T.repeat_visitors;
   const agg = {};
   rep.forEach(r => { const a = agg[r.visitor_type] ||= { s: 0, o: 0, rev: 0 };
-                     a.s += r.sessions; a.o += r.orders; a.rev += r.revenue_per_session_usd * r.sessions; });
+                     a.s += r.sessions; a.o += r.orders; a.rev += r.revenue_usd; });
   table("t-repeat", ["访客类型", "访问数", "转化率", "每次访问收入"],
-    Object.entries(agg).map(([k, a]) => `<tr><td>${k}</td><td>${a.s.toLocaleString()}</td><td>${pct(a.o / a.s, 2)}</td>
-      <td>$${(a.rev / a.s).toFixed(2)}</td></tr>`));
+    Object.entries(agg).map(([k, a]) => `<tr><td>${k}</td><td>${a.s.toLocaleString()}</td><td>${a.s ? pct(a.o / a.s, 2) : "—"}</td>
+      <td>${a.s ? "$" + (a.rev / a.s).toFixed(2) : "—"}</td></tr>`));
   const back = rep.filter(r => r.visitor_type === "回访").sort((a, b) => b.sessions - a.sessions);
   chart("c-repeat", {
     color: COLORS, tooltip: { trigger: "item", formatter: p => `${p.name}：${p.value.toLocaleString()} 次（${p.percent}%）` },

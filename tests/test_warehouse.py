@@ -138,3 +138,11 @@ def test_lander3_is_mobile_only_so_not_compared_with_lander2():
     devices = set(query("SELECT DISTINCT device_type FROM dwd.fact_session WHERE landing_page = '/lander-3' "
                         "AND channel <> N'社交广告'", _conn).device_type)
     assert devices == {"mobile"}
+
+
+def test_repeat_visitors_revenue_reconciles_with_year_total():
+    """新老访客表带上收入原值，合计必须等于当年总收入（前端用它算，不再用四舍五入后的比率反推）。"""
+    diff = one("""SELECT ABS((SELECT SUM(revenue_usd) FROM ads.repeat_visitors)
+                     - (SELECT revenue_usd FROM ads.kpi_yearly
+                        WHERE year = (SELECT MAX(year) FROM ads.repeat_visitors)))""")
+    assert float(diff) < 0.01

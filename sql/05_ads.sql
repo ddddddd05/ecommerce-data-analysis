@@ -6,7 +6,8 @@
    - 所有除法的分母都用 NULLIF(分母, 0) 保护：分母为 0 时结果为 NULL，不会报错，也不会被误读成 0；
    - 不完整月份按数据实际覆盖的日期动态判断（某月的第一条访问晚于月初、或最后一条早于月末），
      以后追加新数据不需要改脚本；
-   - “最近一个完整年度”（漏斗、新老访客、时段分析用）同样从数据推算，不写死年份。
+   - “最近一个完整年度”（漏斗、新老访客、时段分析用）同样从数据推算，不写死年份；
+     数据还不足一个完整年度时，退回最近一年。
 */
 USE [{{DATABASE}}];
 GO
@@ -139,7 +140,7 @@ SELECT y.year, d.device_type,
        CAST(SUM(d.orders) * 1.0 / NULLIF(SUM(d.sessions), 0) AS DECIMAL(9,4))             AS cvr
 INTO ads.funnel_device
 FROM dws.session_daily d
-JOIN (SELECT MAX(year) AS year FROM ads.kpi_yearly WHERE is_partial = 0) y ON YEAR(d.session_date) = y.year
+JOIN (SELECT ISNULL((SELECT MAX(year) FROM ads.kpi_yearly WHERE is_partial = 0), (SELECT MAX(year) FROM ads.kpi_yearly)) AS year) y ON YEAR(d.session_date) = y.year
 GROUP BY y.year, d.device_type;
 GO
 
@@ -202,17 +203,18 @@ SELECT y.year,
             AS DECIMAL(9,4)) AS share_within_type,
        SUM(d.orders) AS orders,
        CAST(SUM(d.orders) * 1.0 / NULLIF(SUM(d.sessions), 0) AS DECIMAL(9,4)) AS cvr,
+       SUM(d.revenue_usd) AS revenue_usd,       -- 带上收入原值，前端合计时不用拿四舍五入后的比率反推
        CAST(SUM(d.revenue_usd) / NULLIF(SUM(d.sessions), 0) AS DECIMAL(9,2))  AS revenue_per_session_usd
 INTO ads.repeat_visitors
 FROM dws.session_daily d
-JOIN (SELECT MAX(year) AS year FROM ads.kpi_yearly WHERE is_partial = 0) y ON YEAR(d.session_date) = y.year
+JOIN (SELECT ISNULL((SELECT MAX(year) FROM ads.kpi_yearly WHERE is_partial = 0), (SELECT MAX(year) FROM ads.kpi_yearly)) AS year) y ON YEAR(d.session_date) = y.year
 GROUP BY y.year, d.is_repeat_session, d.channel;
 GO
 
 /* ---------- Q7 时段：最近一个完整年度，每个“星期几 × 小时”平均有多少次访问（客服排班用） ---------- */
 /* 分母是“这一年里有几个周一/周二……”，而不是“这个小时有访问的天数”，
    否则某天某小时恰好 0 次访问时，这一天会被漏掉、平均值偏高 */
-WITH y AS (SELECT MAX(year) AS year FROM ads.kpi_yearly WHERE is_partial = 0),
+WITH y AS (SELECT ISNULL((SELECT MAX(year) FROM ads.kpi_yearly WHERE is_partial = 0), (SELECT MAX(year) FROM ads.kpi_yearly)) AS year),
 days AS (
     SELECT DATEPART(WEEKDAY, s.session_date) AS weekday, COUNT(DISTINCT s.session_date) AS n_days
     FROM dwd.fact_session s JOIN y ON YEAR(s.session_date) = y.year
