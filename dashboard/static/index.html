@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maven Fuzzy Factory 经营看板</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1f2933; --muted: #6b7785; --line: #e3e7ec;
+    --c1: #2f6fdb; --c2: #e07b39; --c3: #3a9d6e; --c4: #8a5cc2; --good: #2e8b57; --bad: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  header { padding: 20px 16px 4px; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 12px 16px 40px;
+         display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+  .card h2 { font-size: 15px; margin: 0 0 2px; }
+  .card .note { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+  .span3 { grid-column: span 3; } .span6 { grid-column: span 6; } .span12 { grid-column: span 12; }
+  .kpi .label { color: var(--muted); font-size: 13px; }
+  .kpi .value { font-size: 26px; font-weight: 600; margin: 4px 0; }
+  .kpi .delta { font-size: 13px; }
+  .up { color: var(--good); } .down { color: var(--bad); }
+  .chart { width: 100%; height: 300px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 6px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  .table-wrap { overflow-x: auto; }
+  .tag { padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  .tag.win { background: #e3f4ea; color: var(--good); } .tag.lose { background: #fbe7e5; color: var(--bad); }
+  .tag.na { background: #eef1f4; color: var(--muted); }
+  @media (max-width: 900px) { .span3 { grid-column: span 6; } .span6 { grid-column: span 12; } }
+  @media (max-width: 520px) { .span3 { grid-column: span 12; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Maven Fuzzy Factory 经营看板</h1>
+  <div class="sub">数据：2012-03-19 ～ 2015-03-19（Maven Analytics 虚构教学数据） · 数据来源：<span id="source">读取中…</span> · 口径见 docs/02_指标口径.md</div>
+</header>
+<main>
+  <section class="card kpi span3"><div class="label">2014 年收入</div><div class="value" id="k-rev">—</div><div class="delta" id="d-rev"></div></section>
+  <section class="card kpi span3"><div class="label">2014 年订单数</div><div class="value" id="k-ord">—</div><div class="delta" id="d-ord"></div></section>
+  <section class="card kpi span3"><div class="label">2014 年转化率</div><div class="value" id="k-cvr">—</div><div class="delta" id="d-cvr"></div></section>
+  <section class="card kpi span3"><div class="label">2014 年客单价</div><div class="value" id="k-aov">—</div><div class="delta" id="d-aov"></div></section>
+
+  <section class="card span12"><h2>月度访问量与转化率</h2>
+    <p class="note">柱：访问数；线：转化率。首月和末月数据不完整，已剔除。</p><div id="c-trend" class="chart"></div></section>
+
+  <section class="card span6"><h2>流量结构（季度访问占比）</h2>
+    <p class="note">品牌词 + 免费流量占比上升 = 品牌认知变强</p><div id="c-mix" class="chart"></div></section>
+  <section class="card span6"><h2>2014 年转化漏斗：电脑 vs 手机</h2>
+    <p class="note">每一步到达下一步的比例</p><div id="c-funnel" class="chart"></div></section>
+
+  <section class="card span12"><h2>页面改版 A/B 测试</h2>
+    <p class="note">只比较同时段、同流量的两个版本；p &lt; 0.05 为显著；分流检验 p &gt; 0.001 为正常</p>
+    <div class="table-wrap"><table id="t-ab"></table></div></section>
+
+  <section class="card span6"><h2>商品收入占比（季度）</h2><div id="c-product" class="chart"></div></section>
+  <section class="card span6"><h2>商品月度退款率</h2>
+    <p class="note">按下单月份；2015-03 还在退款窗口内，偏低</p><div id="c-refund" class="chart"></div></section>
+
+  <section class="card span12"><h2>2014 年每小时平均访问数</h2>
+    <p class="note">客服排班参考</p><div id="c-heat" class="chart" style="height:340px"></div></section>
+</main>
+<script>
+const pct = (v, d = 1) => v == null ? "—" : (v * 100).toFixed(d) + "%";
+const money = v => "$" + Math.round(v).toLocaleString("en-US");
+const charts = [];
+function chart(id, option) { const c = echarts.init(document.getElementById(id)); c.setOption(option); charts.push(c); }
+window.addEventListener("resize", () => charts.forEach(c => c.resize()));
+async function get(name) {
+  const r = await fetch(`/api/tables/${name}`);
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  const j = await r.json(); document.getElementById("source").textContent = j.source; return j.rows;
+}
+const COLORS = ["#2f6fdb", "#e07b39", "#3a9d6e", "#8a5cc2", "#c0392b"];
+
+function delta(id, now, before, isRate) {
+  const el = document.getElementById(id);
+  const d = isRate ? (now - before) * 100 : (now / before - 1) * 100;
+  el.className = "delta " + (d >= 0 ? "up" : "down");
+  el.textContent = `比 2013 年 ${d >= 0 ? "+" : ""}${d.toFixed(1)}${isRate ? " 个百分点" : "%"}`;
+}
+
+async function main() {
+  const [yearly, monthly, mix, funnel, ab, product, refund, heat] = await Promise.all(
+    ["kpi_yearly", "kpi_monthly", "channel_type_quarterly", "funnel_device", "ab_test_results",
+     "product_quarterly", "refund_monthly", "traffic_heatmap"].map(get));
+
+  const y = Object.fromEntries(yearly.map(r => [r.year, r]));
+  document.getElementById("k-rev").textContent = money(y[2014].revenue_usd);
+  document.getElementById("k-ord").textContent = y[2014].orders.toLocaleString();
+  document.getElementById("k-cvr").textContent = pct(y[2014].cvr, 2);
+  document.getElementById("k-aov").textContent = "$" + y[2014].aov_usd.toFixed(2);
+  delta("d-rev", y[2014].revenue_usd, y[2013].revenue_usd);
+  delta("d-ord", y[2014].orders, y[2013].orders);
+  delta("d-cvr", y[2014].cvr, y[2013].cvr, true);
+  delta("d-aov", y[2014].aov_usd, y[2013].aov_usd);
+
+  const m = monthly.filter(r => !r.is_partial).sort((a, b) => a.month.localeCompare(b.month));
+  chart("c-trend", {
+    color: COLORS, tooltip: { trigger: "axis" }, legend: { data: ["访问数", "转化率"] },
+    grid: { left: 50, right: 50, bottom: 30 },
+    xAxis: { type: "category", data: m.map(r => r.month.slice(0, 7)) },
+    yAxis: [{ type: "value", name: "访问数" }, { type: "value", name: "转化率", axisLabel: { formatter: v => pct(v, 0) } }],
+    series: [{ name: "访问数", type: "bar", data: m.map(r => r.sessions) },
+             { name: "转化率", type: "line", yAxisIndex: 1, smooth: true, data: m.map(r => r.cvr),
+               tooltip: { valueFormatter: v => pct(v, 2) } }]
+  });
+
+  const quarters = [...new Set(mix.map(r => r.quarter))].sort().filter(q => q !== "2012Q1");
+  const types = ["付费拉新", "付费品牌词", "免费流量"];
+  chart("c-mix", {
+    color: ["#9aa5b1", COLORS[0], COLORS[2]], tooltip: { trigger: "axis", valueFormatter: v => pct(v) },
+    legend: { data: types }, grid: { left: 45, right: 15, bottom: 30 },
+    xAxis: { type: "category", data: quarters },
+    yAxis: { type: "value", max: 1, axisLabel: { formatter: v => pct(v, 0) } },
+    series: types.map(t => ({ name: t, type: "bar", stack: "s",
+      data: quarters.map(q => (mix.find(r => r.quarter === q && r.channel_type === t) || {}).session_share || 0) }))
+  });
+
+  const steps = [["rate_landing_to_products", "落地页→商品列表"], ["rate_products_to_detail", "列表→详情"],
+                 ["rate_detail_to_cart", "详情→购物车"], ["rate_cart_to_shipping", "购物车→配送"],
+                 ["rate_shipping_to_billing", "配送→支付"], ["rate_billing_to_order", "支付→下单"]];
+  chart("c-funnel", {
+    color: COLORS, tooltip: { trigger: "axis", valueFormatter: v => pct(v) }, legend: { data: ["电脑", "手机"] },
+    grid: { left: 110, right: 20, bottom: 25 },
+    xAxis: { type: "value", max: 1, axisLabel: { formatter: v => pct(v, 0) } },
+    yAxis: { type: "category", inverse: true, data: steps.map(s => s[1]) },
+    series: [["desktop", "电脑"], ["mobile", "手机"]].map(([d, n]) => ({
+      name: n, type: "bar", data: steps.map(s => funnel.find(r => r.device_type === d)[s[0]]) }))
+  });
+
+  const tag = v => v.includes("新版胜出") ? `<span class="tag win">${v}</span>`
+                 : v.includes("原版胜出") ? `<span class="tag lose">${v}</span>` : `<span class="tag na">${v}</span>`;
+  document.getElementById("t-ab").innerHTML =
+    "<tr><th>测试</th><th>流量范围</th><th>时间</th><th>访问数 A / B</th><th>转化率 A → B</th><th>差值 95% 区间</th><th>p 值</th><th>分流检验 p</th><th>结论</th></tr>" +
+    ab.map(r => `<tr><td>${r.test_id} ${r.test_name}</td><td>${r.segment}</td>
+      <td>${r.window_start.slice(0, 10)} ～ ${r.window_end.slice(0, 10)}</td>
+      <td>${r.sessions_a.toLocaleString()} / ${r.sessions_b.toLocaleString()}</td>
+      <td>${pct(r.cvr_a, 2)} → ${pct(r.cvr_b, 2)}</td>
+      <td>${(r.cvr_ci_low * 100).toFixed(2)} ～ ${(r.cvr_ci_high * 100).toFixed(2)} pp</td>
+      <td>${r.cvr_p_value < 0.0001 ? "< 0.0001" : r.cvr_p_value.toFixed(4)}</td>
+      <td>${r.srm_p_value.toFixed(3)}</td><td>${tag(r.verdict)}</td></tr>`).join("");
+
+  const pq = [...new Set(product.map(r => r.quarter))].sort();
+  const names = [...new Set(product.map(r => r.product_name))];
+  chart("c-product", {
+    color: COLORS, tooltip: { trigger: "axis", valueFormatter: v => pct(v) }, legend: { type: "scroll" },
+    grid: { left: 45, right: 15, bottom: 30 }, xAxis: { type: "category", data: pq },
+    yAxis: { type: "value", max: 1, axisLabel: { formatter: v => pct(v, 0) } },
+    series: names.map(n => ({ name: n, type: "bar", stack: "p",
+      data: pq.map(q => (product.find(r => r.quarter === q && r.product_name === n) || {}).revenue_share || 0) }))
+  });
+
+  const rm = [...new Set(refund.map(r => r.order_month.slice(0, 7)))].sort();
+  chart("c-refund", {
+    color: COLORS, tooltip: { trigger: "axis", valueFormatter: v => v == null ? "—" : pct(v) }, legend: { type: "scroll" },
+    grid: { left: 45, right: 15, bottom: 30 }, xAxis: { type: "category", data: rm },
+    yAxis: { type: "value", axisLabel: { formatter: v => pct(v, 0) } },
+    series: names.map(n => ({ name: n, type: "line", connectNulls: false,
+      data: rm.map(mo => { const r = refund.find(x => x.order_month.slice(0, 7) === mo && x.product_name === n);
+                           return r ? r.refund_rate : null; }) }))
+  });
+
+  const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+  const hv = heat.map(r => [r.hour, r.weekday - 1, r.avg_sessions_per_day]);
+  chart("c-heat", {
+    tooltip: { formatter: p => `${days[p.value[1]]} ${p.value[0]} 点：平均 ${p.value[2]} 次访问` },
+    grid: { left: 50, right: 20, bottom: 60, top: 10 },
+    xAxis: { type: "category", data: [...Array(24).keys()].map(h => h + "点") },
+    yAxis: { type: "category", data: days, inverse: true },
+    visualMap: { min: 0, max: Math.max(...hv.map(v => v[2])), orient: "horizontal", left: "center", bottom: 0,
+                 inRange: { color: ["#eef3fb", "#2f6fdb"] }, calculable: true },
+    series: [{ type: "heatmap", data: hv }]
+  });
+}
+main().catch(e => { document.getElementById("source").textContent = "读取失败：" + e.message; });
+</script>
+</body>
+</html>
