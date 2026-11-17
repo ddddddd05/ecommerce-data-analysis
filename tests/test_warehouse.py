@@ -1,9 +1,12 @@
 """连本机数据库的测试：在流水线跑完之后，抽查各层的数据和口径是否正确。
 
-数据库连不上时自动跳过（例如在没有 SQL Server 的机器上）。先运行：python pipeline/run_pipeline.py
+全部标记为 db：没有 SQL Server 的机器上运行 `pytest -m "not db"` 只跑离线测试。
+数据库连不上时这些测试自动跳过（连接在 fixture 里建立，收集用例阶段不连库）。
+先运行：python pipeline/run_pipeline.py
 这些测试用独立写的 SQL 重新计算关键数字，和各层表里的结果比对。
 """
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -12,19 +15,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pipeline.db import connect, query  # noqa: E402
 
-try:
-    _conn = connect()
-    query("SELECT TOP 1 1 AS x FROM ads.kpi_yearly", _conn)
-except Exception as e:  # noqa: BLE001
-    pytest.skip(f"数据库不可用或流水线没跑过：{e}", allow_module_level=True)
+pytestmark = pytest.mark.db
+_conn = None
 
 
-def one(sql: str):
-    return query(sql, _conn).iloc[0, 0]
+@pytest.fixture(scope="module", autouse=True)
+def db_conn():
+    global _conn
+    try:
+        conn = connect()
+        query("SELECT TOP 1 1 AS x FROM ads.kpi_yearly", conn)
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"数据库不可用或流水线没跑过：{e}")
+    with closing(conn):
+        _conn = conn
+        yield conn
+    _conn = None
+
+
+def one(sql: str, params: list | None = None):
+    return query(sql, _conn, params).iloc[0, 0]
 
 
 def test_all_blocking_checks_passed():
-    assert one("SELECT COUNT(*) FROM dq.check_results WHERE severity = N'阻断'") >= 36
+    assert one("SELECT COUNT(*) FROM dq.check_results WHERE severity = N'阻断'") >= 44   # 36 原始层 + 8 层间核对
     assert one("SELECT COUNT(*) FROM dq.check_results WHERE severity = N'阻断' AND failed_rows > 0") == 0
 
 
@@ -88,11 +102,36 @@ def test_ab_tests_have_balanced_split_and_valid_windows():
     assert (r.window_start < r.window_end).all()
     t4 = r.set_index("test_id").loc["T4"]
     # 独立重算 T4 实验组的转化率
-    cvr_b = one(f"""SELECT AVG(has_order * 1.0) FROM dwd.fact_session
-                    WHERE landing_page = '/lander-5' AND device_type = 'desktop'
-                      AND channel IN (N'G搜索-非品牌词', N'B搜索-非品牌词')
-                      AND session_start >= '{t4.window_start}' AND session_start <= '{t4.window_end}'""")
+    cvr_b = one("""SELECT AVG(has_order * 1.0) FROM dwd.fact_session
+                   WHERE landing_page = '/lander-5' AND device_type = 'desktop'
+                     AND channel IN (N'G搜索-非品牌词', N'B搜索-非品牌词')
+                     AND session_start >= ? AND session_start <= ?""",
+                [t4.window_start.to_pydatetime(), t4.window_end.to_pydatetime()])
     assert float(cvr_b) == pytest.approx(t4.cvr_b, abs=1e-6)
+
+
+def test_partial_months_detected_from_data_coverage():
+    """不完整月份是按数据覆盖日期判断的：每个被标记的月份，要么不从 1 号开始，要么没到月末。"""
+    bad = one("""SELECT COUNT(*) FROM ads.kpi_monthly
+                 WHERE is_partial = 1 AND first_day = month
+                   AND last_day = DATEADD(DAY, -1, DATEADD(MONTH, 1, month))""")
+    assert bad == 0
+
+
+def test_no_division_by_zero_nulls_in_core_kpis():
+    """分母都不为 0 时，NULLIF 保护不应该产生 NULL。"""
+    assert one("SELECT COUNT(*) FROM ads.kpi_monthly WHERE cvr IS NULL OR aov_usd IS NULL") == 0
+
+
+def test_first_product_page_follows_browse_order():
+    """看了多个商品页的访问，first_product_page 必须是浏览顺序上的第一个。"""
+    mismatch = one("""
+        SELECT COUNT(*) FROM dwd.fact_session s
+        CROSS APPLY (SELECT TOP 1 p.pageview_url FROM dwd.fact_pageview p
+                     WHERE p.session_id = s.session_id AND p.page_type = N'商品详情'
+                     ORDER BY p.page_seq) f
+        WHERE s.product_detail_views > 1 AND s.first_product_page <> f.pageview_url""")
+    assert mismatch == 0
 
 
 def test_lander3_is_mobile_only_so_not_compared_with_lander2():

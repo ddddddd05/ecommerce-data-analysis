@@ -1,4 +1,4 @@
-"""Q3：落地页和支付页的 A/B 测试评估，结果写入 ads.ab_test_results 和 outputs/ab_tests.csv。
+"""Q3：落地页和支付页的 A/B 测试评估，结果写入 ads.ab_test_results（流水线导出为 outputs/ab_test_results.csv）。
 
 为什么只评估这 4 个测试：先按“落地页 × 渠道 × 设备 × 广告”查了每个页面在什么时间收到哪部分流量
 （结果见 docs/04_数据质量与探索记录.md），只有下面 4 组是**同一时间段、同一部分流量、各分一半**，
@@ -18,7 +18,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from analysis.stats import sample_ratio_test, two_proportion_test  # noqa: E402
-from pipeline.db import ROOT, connect, query  # noqa: E402
+from pipeline.db import connect, query  # noqa: E402
 
 
 @dataclass
@@ -130,18 +130,19 @@ CREATE TABLE ads.ab_test_results (
 
 
 def main() -> pd.DataFrame:
+    """评估 4 个测试并写入 ads.ab_test_results。导出 CSV 由流水线第 07 步统一完成（outputs/ab_test_results.csv）。"""
     conn = connect()
-    results = pd.DataFrame([evaluate(t, conn) for t in TESTS])
-    cur = conn.cursor()
-    cur.execute(DDL)
-    cols = list(results.columns)
-    rows = [tuple(None if pd.isna(v) else (v.to_pydatetime() if isinstance(v, pd.Timestamp) else v)
-                  for v in r) for r in results.itertuples(index=False)]
-    cur.executemany(f"INSERT ads.ab_test_results ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
-                    rows)
-    out = ROOT / "outputs"
-    out.mkdir(exist_ok=True)
-    results.to_csv(out / "ab_tests.csv", index=False, encoding="utf-8-sig")
+    try:
+        results = pd.DataFrame([evaluate(t, conn) for t in TESTS])
+        cur = conn.cursor()
+        cur.execute(DDL)
+        cols = list(results.columns)
+        rows = [tuple(None if pd.isna(v) else (v.to_pydatetime() if isinstance(v, pd.Timestamp) else v)
+                      for v in r) for r in results.itertuples(index=False)]
+        cur.executemany(f"INSERT ads.ab_test_results ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                        rows)
+    finally:
+        conn.close()
     for r in results.itertuples():
         print(f"{r.test_id} {r.test_name}: 转化率 {r.cvr_a:.2%} → {r.cvr_b:.2%}，p={r.cvr_p_value:.4f}，"
               f"分流 {r.share_b:.1%}（SRM p={r.srm_p_value:.3f}）→ {r.verdict}")

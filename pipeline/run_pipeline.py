@@ -13,6 +13,7 @@ import json
 import logging
 import sys
 import time
+from contextlib import closing
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -80,8 +81,16 @@ def main(start_from: str = "00") -> None:
         fn()
         log.info("✔ %s 完成，用时 %.1f 秒", code, time.time() - t)
 
-    step("00", "建库和分层", lambda: run_sql_file(SQL_DIR / "00_create_database.sql", connect(None), params))
-    conn = connect()
+    def create_db():
+        with closing(connect(None)) as master:
+            run_sql_file(SQL_DIR / "00_create_database.sql", master, params)
+
+    step("00", "建库和分层", create_db)
+    with closing(connect()) as conn:
+        run_steps(conn, step, params, t0)
+
+
+def run_steps(conn, step, params: dict, t0: float) -> None:
 
     def load():
         manifest = prepare_staging.main()

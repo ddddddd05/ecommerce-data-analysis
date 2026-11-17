@@ -20,8 +20,8 @@
 ```
 data/raw/*.csv ──► prepare_staging.py（只改文件格式）──► BULK INSERT
                                                             │
- ods  原始层  6 张表，全部 VARCHAR，和源文件一致 ◄───────────┘
-   │  dq  质量检查：28 项阻断 + 6 项警告 + 3 项信息，阻断项不通过流水线停止
+ ods  原始层  6 张表，全部 NVARCHAR，和源文件一致 ◄───────────┘
+   │  dq  质量检查：36 项阻断 + 6 项警告 + 3 项信息，阻断项不通过流水线停止
    ▼
  dwd  明细层  类型转换、空值处理；派生渠道、落地页、跳出、漏斗步骤、是否下单、退款
    │  + 6 项层间核对（访问数、订单数、收入、退款与原始层一致；规则无遗漏）
@@ -44,11 +44,13 @@ data/raw/*.csv ──► prepare_staging.py（只改文件格式）──► BUL
 | 质量关卡 | `sql/02_quality_checks.sql`、`run_pipeline.py` 的 `quality_gate` | 有问题的数据不会流到报告里 |
 | 口径只在明细层定义一次 | `sql/03_dwd.sql` | 所有报表口径一致 |
 | 层间核对 | 03、04 脚本末尾 | 每加工一层都和上一层对账 |
-| 脚本编号、可重复运行、一键流水线 | `sql/00～05`、`pipeline/run_pipeline.py` | 换人、换电脑都能跑出同样结果（约 77 秒） |
+| 脚本编号、可重复运行、一键流水线 | `sql/00～05`、`pipeline/run_pipeline.py` | 换人、换电脑都能跑出同样结果（约 90 秒） |
 | A/B 测试先查分流、只比同期同流量 | `analysis/ab_tests.py`、[docs/04](docs/04_数据质量与探索记录.md) | 避免把设备差异、季节差异当成页面效果 |
 | 显著性、置信区间、样本量 | `analysis/stats.py` | 区分“真提升”和“随机波动”，测试前算好要跑多久 |
-| 自动化测试 | `tests/` | 用独立 SQL 复算关键数字 |
+| 自动化测试 | `tests/` | 用独立 SQL 复算关键数字；`db` 标记区分离线测试和连库测试 |
+| 除零保护、动态识别不完整月份和最近完整年度 | `sql/05_ads.sql` | 追加新数据不用改脚本，分母为 0 不报错 |
 | 报告：结论 + 依据 + 建议 + 局限 | `reports/经营分析报告.md` | 每个结论都标注出自哪张表，建议都说明怎么验证 |
+| 代码审查后逐条整改 | [docs/05](docs/05_代码审查与改进记录.md) | 11 条审查意见的风险、改法和验证方式 |
 
 ## 快速开始
 
@@ -60,7 +62,7 @@ python -m venv .venv
 pip install -r requirements.txt
 # 把下载的 Maven Fuzzy Factory 数据解压到 data/raw/
 python pipeline/run_pipeline.py            # 建库、导入、检查、分层、A/B 测试、导出
-python -m pytest -q                        # 18 个测试
+python -m pytest -q                        # 26 个测试（没有 SQL Server 时用 pytest -m "not db" 只跑 14 个离线测试）
 uvicorn dashboard.app:app --port 8100      # 打开 http://localhost:8100
 ```
 
@@ -85,8 +87,8 @@ pipeline/
 analysis/
   stats.py                 两比例 z 检验、置信区间、样本比例检验、样本量计算
   ab_tests.py              4 个 A/B 测试的评估
-dashboard/                 看板（FastAPI 只读应用层 + ECharts 页面）
-docs/                      业务问题、指标口径、数据字典、质量与探索记录
+dashboard/                 看板（FastAPI 只读应用层 + ECharts 页面，ECharts 放在本地，离线可用）
+docs/                      业务问题、指标口径、数据字典、质量与探索记录、代码审查与改进记录
 reports/经营分析报告.md    最终报告
 tests/                     离线测试 + 数据库抽查
 ```

@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Maven Fuzzy Factory 经营看板</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+<!-- ECharts 5.4.3（Apache-2.0）放在本地，内网 / 离线也能打开 -->
+<script src="vendor/echarts.min.js"></script>
 <style>
   :root {
     --bg: #f6f7f9; --card: #ffffff; --text: #1f2933; --muted: #6b7785; --line: #e3e7ec;
-    --c1: #2f6fdb; --c2: #e07b39; --c3: #3a9d6e; --c4: #8a5cc2; --good: #2e8b57; --bad: #c0392b;
+    --good: #2e8b57; --bad: #c0392b;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
@@ -16,8 +17,12 @@
   header { padding: 20px 16px 4px; max-width: 1200px; margin: 0 auto; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   .sub { color: var(--muted); font-size: 13px; }
+  nav { max-width: 1200px; margin: 6px auto 0; padding: 0 16px; display: flex; flex-wrap: wrap; gap: 6px; }
+  nav a { font-size: 13px; color: #2f6fdb; text-decoration: none; padding: 2px 8px; border: 1px solid var(--line);
+          border-radius: 12px; background: var(--card); }
   main { max-width: 1200px; margin: 0 auto; padding: 12px 16px 40px;
          display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+  .group { grid-column: span 12; font-size: 16px; font-weight: 600; margin: 10px 0 -4px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
   .card h2 { font-size: 15px; margin: 0 0 2px; }
   .card .note { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
@@ -31,6 +36,7 @@
   th, td { padding: 7px 6px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
   th { color: var(--muted); font-weight: 500; }
+  tr.partial td { color: var(--muted); font-style: italic; }
   .table-wrap { overflow-x: auto; }
   .tag { padding: 1px 6px; border-radius: 4px; font-size: 12px; }
   .tag.win { background: #e3f4ea; color: var(--good); } .tag.lose { background: #fbe7e5; color: var(--bad); }
@@ -42,36 +48,60 @@
 <body>
 <header>
   <h1>Maven Fuzzy Factory 经营看板</h1>
-  <div class="sub">数据：2012-03-19 ～ 2015-03-19（Maven Analytics 虚构教学数据） · 数据来源：<span id="source">读取中…</span> · 口径见 docs/02_指标口径.md</div>
+  <div class="sub">数据：<span id="range">—</span>（Maven Analytics 虚构教学数据） · 数据来源：<span id="source">读取中…</span> · 口径见 docs/02_指标口径.md</div>
 </header>
+<nav>
+  <a href="#g1">Q1 整体经营</a><a href="#g2">Q2 渠道</a><a href="#g3">Q3 A/B 测试</a><a href="#g4">Q4 漏斗</a>
+  <a href="#g5">Q5 商品</a><a href="#g6">Q6 回访顾客</a><a href="#g7">Q7 时段</a>
+</nav>
 <main>
-  <section class="card kpi span3"><div class="label">2014 年收入</div><div class="value" id="k-rev">—</div><div class="delta" id="d-rev"></div></section>
-  <section class="card kpi span3"><div class="label">2014 年订单数</div><div class="value" id="k-ord">—</div><div class="delta" id="d-ord"></div></section>
-  <section class="card kpi span3"><div class="label">2014 年转化率</div><div class="value" id="k-cvr">—</div><div class="delta" id="d-cvr"></div></section>
-  <section class="card kpi span3"><div class="label">2014 年客单价</div><div class="value" id="k-aov">—</div><div class="delta" id="d-aov"></div></section>
+  <div class="group" id="g1">Q1 整体经营</div>
+  <section class="card kpi span3"><div class="label"><span class="y"></span> 年收入</div><div class="value" id="k-rev">—</div><div class="delta" id="d-rev"></div></section>
+  <section class="card kpi span3"><div class="label"><span class="y"></span> 年订单数</div><div class="value" id="k-ord">—</div><div class="delta" id="d-ord"></div></section>
+  <section class="card kpi span3"><div class="label"><span class="y"></span> 年转化率</div><div class="value" id="k-cvr">—</div><div class="delta" id="d-cvr"></div></section>
+  <section class="card kpi span3"><div class="label"><span class="y"></span> 年客单价</div><div class="value" id="k-aov">—</div><div class="delta" id="d-aov"></div></section>
 
   <section class="card span12"><h2>月度访问量与转化率</h2>
-    <p class="note">柱：访问数；线：转化率。首月和末月数据不完整，已剔除。</p><div id="c-trend" class="chart"></div></section>
+    <p class="note">柱：访问数；线：转化率。不完整月份（按数据覆盖日期自动识别）已剔除。</p><div id="c-trend" class="chart"></div></section>
+  <section class="card span12"><h2>季度经营指标</h2>
+    <p class="note">灰色斜体为不完整季度，不参与对比</p><div class="table-wrap"><table id="t-quarter"></table></div></section>
 
+  <div class="group" id="g2">Q2 渠道</div>
   <section class="card span6"><h2>流量结构（季度访问占比）</h2>
     <p class="note">品牌词 + 免费流量占比上升 = 品牌认知变强</p><div id="c-mix" class="chart"></div></section>
-  <section class="card span6"><h2>2014 年转化漏斗：电脑 vs 手机</h2>
-    <p class="note">每一步到达下一步的比例</p><div id="c-funnel" class="chart"></div></section>
+  <section class="card span6"><h2><span class="y"></span> 年付费拉新渠道：电脑 vs 手机</h2>
+    <p class="note">每次访问带来的收入（美元），广告出价不应超过它</p><div id="c-device" class="chart"></div></section>
+  <section class="card span12"><h2><span class="y"></span> 年各渠道表现</h2>
+    <div class="table-wrap"><table id="t-channel"></table></div></section>
 
-  <section class="card span12"><h2>页面改版 A/B 测试</h2>
+  <div class="group" id="g3">Q3 页面改版 A/B 测试</div>
+  <section class="card span12"><h2>A/B 测试结果</h2>
     <p class="note">只比较同时段、同流量的两个版本；p &lt; 0.05 为显著；分流检验 p &gt; 0.001 为正常</p>
     <div class="table-wrap"><table id="t-ab"></table></div></section>
 
+  <div class="group" id="g4">Q4 转化漏斗</div>
+  <section class="card span12"><h2><span class="y"></span> 年转化漏斗：电脑 vs 手机</h2>
+    <p class="note">每一步到达下一步的比例</p><div id="c-funnel" class="chart"></div></section>
+
+  <div class="group" id="g5">Q5 商品</div>
   <section class="card span6"><h2>商品收入占比（季度）</h2><div id="c-product" class="chart"></div></section>
   <section class="card span6"><h2>商品月度退款率</h2>
-    <p class="note">按下单月份；2015-03 还在退款窗口内，偏低</p><div id="c-refund" class="chart"></div></section>
+    <p class="note">按下单月份；最近半个月的订单还在退款窗口内，会偏低</p><div id="c-refund" class="chart"></div></section>
+  <section class="card span12"><h2>交叉销售：买了主商品的订单里，顺带买其他商品的比例</h2>
+    <p class="note" id="cross-note"></p><div id="c-cross" class="chart" style="height:280px"></div></section>
 
-  <section class="card span12"><h2>2014 年每小时平均访问数</h2>
+  <div class="group" id="g6">Q6 回访顾客</div>
+  <section class="card span6"><h2><span class="y"></span> 年首次访问 vs 回访</h2><div class="table-wrap"><table id="t-repeat"></table></div></section>
+  <section class="card span6"><h2>回访顾客从哪里回来</h2><div id="c-repeat" class="chart"></div></section>
+
+  <div class="group" id="g7">Q7 时段</div>
+  <section class="card span12"><h2><span class="y"></span> 年每小时平均访问数</h2>
     <p class="note">客服排班参考</p><div id="c-heat" class="chart" style="height:340px"></div></section>
 </main>
 <script>
 const pct = (v, d = 1) => v == null ? "—" : (v * 100).toFixed(d) + "%";
-const money = v => "$" + Math.round(v).toLocaleString("en-US");
+const money = v => v == null ? "—" : "$" + Math.round(v).toLocaleString("en-US");
+const COLORS = ["#2f6fdb", "#e07b39", "#3a9d6e", "#8a5cc2", "#c0392b", "#7a8794", "#d4a017"];
 const charts = [];
 function chart(id, option) { const c = echarts.init(document.getElementById(id)); c.setOption(option); charts.push(c); }
 window.addEventListener("resize", () => charts.forEach(c => c.resize()));
@@ -80,31 +110,43 @@ async function get(name) {
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
   const j = await r.json(); document.getElementById("source").textContent = j.source; return j.rows;
 }
-const COLORS = ["#2f6fdb", "#e07b39", "#3a9d6e", "#8a5cc2", "#c0392b"];
-
-function delta(id, now, before, isRate) {
+function delta(id, now, before, isRate, prevYear) {
   const el = document.getElementById(id);
+  if (before == null) { el.textContent = ""; return; }
   const d = isRate ? (now - before) * 100 : (now / before - 1) * 100;
   el.className = "delta " + (d >= 0 ? "up" : "down");
-  el.textContent = `比 2013 年 ${d >= 0 ? "+" : ""}${d.toFixed(1)}${isRate ? " 个百分点" : "%"}`;
+  el.textContent = `比 ${prevYear} 年 ${d >= 0 ? "+" : ""}${d.toFixed(1)}${isRate ? " 个百分点" : "%"}`;
 }
+const table = (id, head, rows) => {
+  document.getElementById(id).innerHTML = "<tr>" + head.map(h => `<th>${h}</th>`).join("") + "</tr>" + rows.join("");
+};
 
 async function main() {
-  const [yearly, monthly, mix, funnel, ab, product, refund, heat] = await Promise.all(
-    ["kpi_yearly", "kpi_monthly", "channel_type_quarterly", "funnel_device", "ab_test_results",
-     "product_quarterly", "refund_monthly", "traffic_heatmap"].map(get));
+  const names = ["kpi_yearly", "kpi_monthly", "kpi_quarterly", "channel_type_quarterly", "channel_yearly",
+                 "paid_search_device", "funnel_device", "ab_test_results", "product_quarterly", "refund_monthly",
+                 "cross_sell", "repeat_visitors", "traffic_heatmap"];
+  const T = Object.fromEntries(await Promise.all(names.map(async n => [n, await get(n)])));
 
-  const y = Object.fromEntries(yearly.map(r => [r.year, r]));
-  document.getElementById("k-rev").textContent = money(y[2014].revenue_usd);
-  document.getElementById("k-ord").textContent = y[2014].orders.toLocaleString();
-  document.getElementById("k-cvr").textContent = pct(y[2014].cvr, 2);
-  document.getElementById("k-aov").textContent = "$" + y[2014].aov_usd.toFixed(2);
-  delta("d-rev", y[2014].revenue_usd, y[2013].revenue_usd);
-  delta("d-ord", y[2014].orders, y[2013].orders);
-  delta("d-cvr", y[2014].cvr, y[2013].cvr, true);
-  delta("d-aov", y[2014].aov_usd, y[2013].aov_usd);
+  // 最近一个完整年度和上一年：从数据推算，不写死年份
+  const full = T.kpi_yearly.filter(r => !r.is_partial).sort((a, b) => a.year - b.year);
+  const cur = full[full.length - 1], prev = full[full.length - 2];
+  document.querySelectorAll(".y").forEach(e => e.textContent = cur.year);
+  const months = T.kpi_monthly.map(r => r.month).sort();
+  const first = T.kpi_monthly.find(r => r.month === months[0]), last = T.kpi_monthly.find(r => r.month === months[months.length - 1]);
+  document.getElementById("range").textContent = `${first.first_day || months[0]} ～ ${last.last_day || months[months.length - 1]}`;
 
-  const m = monthly.filter(r => !r.is_partial).sort((a, b) => a.month.localeCompare(b.month));
+  document.getElementById("k-rev").textContent = money(cur.revenue_usd);
+  document.getElementById("k-ord").textContent = cur.orders.toLocaleString();
+  document.getElementById("k-cvr").textContent = pct(cur.cvr, 2);
+  document.getElementById("k-aov").textContent = "$" + cur.aov_usd.toFixed(2);
+  if (prev) {
+    delta("d-rev", cur.revenue_usd, prev.revenue_usd, false, prev.year);
+    delta("d-ord", cur.orders, prev.orders, false, prev.year);
+    delta("d-cvr", cur.cvr, prev.cvr, true, prev.year);
+    delta("d-aov", cur.aov_usd, prev.aov_usd, false, prev.year);
+  }
+
+  const m = T.kpi_monthly.filter(r => !r.is_partial).sort((a, b) => a.month.localeCompare(b.month));
   chart("c-trend", {
     color: COLORS, tooltip: { trigger: "axis" }, legend: { data: ["访问数", "转化率"] },
     grid: { left: 50, right: 50, bottom: 30 },
@@ -115,7 +157,16 @@ async function main() {
                tooltip: { valueFormatter: v => pct(v, 2) } }]
   });
 
-  const quarters = [...new Set(mix.map(r => r.quarter))].sort().filter(q => q !== "2012Q1");
+  table("t-quarter", ["季度", "访问数", "订单数", "收入", "转化率", "客单价", "每次访问收入", "毛利率", "退款率"],
+    T.kpi_quarterly.sort((a, b) => a.quarter.localeCompare(b.quarter)).map(r =>
+      `<tr class="${r.is_partial ? "partial" : ""}"><td>${r.quarter}${r.is_partial ? "（不完整）" : ""}</td>
+       <td>${r.sessions.toLocaleString()}</td><td>${r.orders.toLocaleString()}</td><td>${money(r.revenue_usd)}</td>
+       <td>${pct(r.cvr, 2)}</td><td>$${(r.aov_usd ?? 0).toFixed(2)}</td><td>$${(r.revenue_per_session_usd ?? 0).toFixed(2)}</td>
+       <td>${pct(r.gross_margin)}</td><td>${pct(r.item_refund_rate)}</td></tr>`));
+
+  const mix = T.channel_type_quarterly;
+  const partialQ = new Set(T.kpi_quarterly.filter(r => r.is_partial).map(r => r.quarter));
+  const quarters = [...new Set(mix.map(r => r.quarter))].sort().filter(q => !partialQ.has(q));
   const types = ["付费拉新", "付费品牌词", "免费流量"];
   chart("c-mix", {
     color: ["#9aa5b1", COLORS[0], COLORS[2]], tooltip: { trigger: "axis", valueFormatter: v => pct(v) },
@@ -126,6 +177,32 @@ async function main() {
       data: quarters.map(q => (mix.find(r => r.quarter === q && r.channel_type === t) || {}).session_share || 0) }))
   });
 
+  const dev = T.paid_search_device.filter(r => r.year === cur.year);
+  const devCh = [...new Set(dev.map(r => r.channel))];
+  chart("c-device", {
+    color: COLORS, tooltip: { trigger: "axis", valueFormatter: v => "$" + v.toFixed(2) }, legend: { data: ["电脑", "手机"] },
+    grid: { left: 45, right: 15, bottom: 30 }, xAxis: { type: "category", data: devCh },
+    yAxis: { type: "value", axisLabel: { formatter: v => "$" + v } },
+    series: [["desktop", "电脑"], ["mobile", "手机"]].map(([d, n]) => ({ name: n, type: "bar",
+      data: devCh.map(c => (dev.find(r => r.channel === c && r.device_type === d) || {}).revenue_per_session_usd ?? null) }))
+  });
+
+  table("t-channel", ["渠道", "类型", "访问数", "访问占比", "转化率", "每次访问收入", "跳出率"],
+    T.channel_yearly.filter(r => r.year === cur.year).sort((a, b) => b.sessions - a.sessions).map(r =>
+      `<tr><td>${r.channel}</td><td>${r.channel_type}</td><td>${r.sessions.toLocaleString()}</td><td>${pct(r.session_share)}</td>
+       <td>${pct(r.cvr, 2)}</td><td>$${r.revenue_per_session_usd.toFixed(2)}</td><td>${pct(r.bounce_rate)}</td></tr>`));
+
+  const tag = v => v.includes("新版胜出") ? `<span class="tag win">${v}</span>`
+                 : v.includes("原版胜出") ? `<span class="tag lose">${v}</span>` : `<span class="tag na">${v}</span>`;
+  table("t-ab", ["测试", "流量范围", "时间", "访问数 A / B", "转化率 A → B", "差值 95% 区间", "p 值", "分流检验 p", "结论"],
+    T.ab_test_results.map(r => `<tr><td>${r.test_id} ${r.test_name}</td><td>${r.segment}</td>
+      <td>${r.window_start.slice(0, 10)} ～ ${r.window_end.slice(0, 10)}</td>
+      <td>${r.sessions_a.toLocaleString()} / ${r.sessions_b.toLocaleString()}</td>
+      <td>${pct(r.cvr_a, 2)} → ${pct(r.cvr_b, 2)}</td>
+      <td>${(r.cvr_ci_low * 100).toFixed(2)} ～ ${(r.cvr_ci_high * 100).toFixed(2)} 个百分点</td>
+      <td>${r.cvr_p_value < 0.0001 ? "< 0.0001" : r.cvr_p_value.toFixed(4)}</td>
+      <td>${r.srm_p_value.toFixed(3)}</td><td>${tag(r.verdict)}</td></tr>`));
+
   const steps = [["rate_landing_to_products", "落地页→商品列表"], ["rate_products_to_detail", "列表→详情"],
                  ["rate_detail_to_cart", "详情→购物车"], ["rate_cart_to_shipping", "购物车→配送"],
                  ["rate_shipping_to_billing", "配送→支付"], ["rate_billing_to_order", "支付→下单"]];
@@ -135,43 +212,59 @@ async function main() {
     xAxis: { type: "value", max: 1, axisLabel: { formatter: v => pct(v, 0) } },
     yAxis: { type: "category", inverse: true, data: steps.map(s => s[1]) },
     series: [["desktop", "电脑"], ["mobile", "手机"]].map(([d, n]) => ({
-      name: n, type: "bar", data: steps.map(s => funnel.find(r => r.device_type === d)[s[0]]) }))
+      name: n, type: "bar", data: steps.map(s => (T.funnel_device.find(r => r.device_type === d) || {})[s[0]]) }))
   });
 
-  const tag = v => v.includes("新版胜出") ? `<span class="tag win">${v}</span>`
-                 : v.includes("原版胜出") ? `<span class="tag lose">${v}</span>` : `<span class="tag na">${v}</span>`;
-  document.getElementById("t-ab").innerHTML =
-    "<tr><th>测试</th><th>流量范围</th><th>时间</th><th>访问数 A / B</th><th>转化率 A → B</th><th>差值 95% 区间</th><th>p 值</th><th>分流检验 p</th><th>结论</th></tr>" +
-    ab.map(r => `<tr><td>${r.test_id} ${r.test_name}</td><td>${r.segment}</td>
-      <td>${r.window_start.slice(0, 10)} ～ ${r.window_end.slice(0, 10)}</td>
-      <td>${r.sessions_a.toLocaleString()} / ${r.sessions_b.toLocaleString()}</td>
-      <td>${pct(r.cvr_a, 2)} → ${pct(r.cvr_b, 2)}</td>
-      <td>${(r.cvr_ci_low * 100).toFixed(2)} ～ ${(r.cvr_ci_high * 100).toFixed(2)} pp</td>
-      <td>${r.cvr_p_value < 0.0001 ? "< 0.0001" : r.cvr_p_value.toFixed(4)}</td>
-      <td>${r.srm_p_value.toFixed(3)}</td><td>${tag(r.verdict)}</td></tr>`).join("");
-
-  const pq = [...new Set(product.map(r => r.quarter))].sort();
-  const names = [...new Set(product.map(r => r.product_name))];
+  const product = T.product_quarterly, pq = [...new Set(product.map(r => r.quarter))].sort();
+  const pnames = [...new Set(product.map(r => r.product_name))];
   chart("c-product", {
     color: COLORS, tooltip: { trigger: "axis", valueFormatter: v => pct(v) }, legend: { type: "scroll" },
     grid: { left: 45, right: 15, bottom: 30 }, xAxis: { type: "category", data: pq },
     yAxis: { type: "value", max: 1, axisLabel: { formatter: v => pct(v, 0) } },
-    series: names.map(n => ({ name: n, type: "bar", stack: "p",
+    series: pnames.map(n => ({ name: n, type: "bar", stack: "p",
       data: pq.map(q => (product.find(r => r.quarter === q && r.product_name === n) || {}).revenue_share || 0) }))
   });
 
-  const rm = [...new Set(refund.map(r => r.order_month.slice(0, 7)))].sort();
+  const refund = T.refund_monthly, rm = [...new Set(refund.map(r => r.order_month.slice(0, 7)))].sort();
   chart("c-refund", {
     color: COLORS, tooltip: { trigger: "axis", valueFormatter: v => v == null ? "—" : pct(v) }, legend: { type: "scroll" },
     grid: { left: 45, right: 15, bottom: 30 }, xAxis: { type: "category", data: rm },
     yAxis: { type: "value", axisLabel: { formatter: v => pct(v, 0) } },
-    series: names.map(n => ({ name: n, type: "line", connectNulls: false,
+    series: pnames.map(n => ({ name: n, type: "line",
       data: rm.map(mo => { const r = refund.find(x => x.order_month.slice(0, 7) === mo && x.product_name === n);
                            return r ? r.refund_rate : null; }) }))
   });
 
+  const cs = T.cross_sell;
+  document.getElementById("cross-note").textContent =
+    `统计从 ${(cs[0] || {}).period_start?.slice(0, 10) ?? "—"}（最后一款商品上架，四款都在售）开始的订单；数字 = 顺带购买该商品的订单占比`;
+  const prim = [...new Set(cs.map(r => r.primary_product))], crossP = [...new Set(cs.map(r => r.cross_product))];
+  const cells = cs.map(r => [crossP.indexOf(r.cross_product), prim.indexOf(r.primary_product), r.cross_sell_rate]);
+  chart("c-cross", {
+    tooltip: { formatter: p => `主商品 ${prim[p.value[1]]}，顺带买 ${crossP[p.value[0]]}：${pct(p.value[2])}` },
+    grid: { left: 190, right: 20, top: 10, bottom: 50 },
+    xAxis: { type: "category", data: crossP.map(n => "+" + n), axisLabel: { interval: 0, fontSize: 11 } },
+    yAxis: { type: "category", data: prim, inverse: true },
+    visualMap: { show: false, min: 0, max: Math.max(...cells.map(c => c[2])), inRange: { color: ["#eef3fb", "#2f6fdb"] } },
+    series: [{ type: "heatmap", data: cells, label: { show: true, formatter: p => pct(p.value[2]) } }]
+  });
+
+  const rep = T.repeat_visitors;
+  const agg = {};
+  rep.forEach(r => { const a = agg[r.visitor_type] ||= { s: 0, o: 0, rev: 0 };
+                     a.s += r.sessions; a.o += r.orders; a.rev += r.revenue_per_session_usd * r.sessions; });
+  table("t-repeat", ["访客类型", "访问数", "转化率", "每次访问收入"],
+    Object.entries(agg).map(([k, a]) => `<tr><td>${k}</td><td>${a.s.toLocaleString()}</td><td>${pct(a.o / a.s, 2)}</td>
+      <td>$${(a.rev / a.s).toFixed(2)}</td></tr>`));
+  const back = rep.filter(r => r.visitor_type === "回访").sort((a, b) => b.sessions - a.sessions);
+  chart("c-repeat", {
+    color: COLORS, tooltip: { trigger: "item", formatter: p => `${p.name}：${p.value.toLocaleString()} 次（${p.percent}%）` },
+    series: [{ type: "pie", radius: ["40%", "70%"], data: back.map(r => ({ name: r.channel, value: r.sessions })),
+               label: { formatter: "{b}\n{d}%" } }]
+  });
+
   const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-  const hv = heat.map(r => [r.hour, r.weekday - 1, r.avg_sessions_per_day]);
+  const hv = T.traffic_heatmap.map(r => [r.hour, r.weekday - 1, r.avg_sessions_per_day]);
   chart("c-heat", {
     tooltip: { formatter: p => `${days[p.value[1]]} ${p.value[0]} 点：平均 ${p.value[2]} 次访问` },
     grid: { left: 50, right: 20, bottom: 60, top: 10 },

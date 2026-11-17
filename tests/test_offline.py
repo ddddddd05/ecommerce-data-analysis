@@ -42,6 +42,18 @@ def test_required_sample_size():
     assert required_sample_size(0.10, 0.11) > required_sample_size(0.10, 0.12)   # 差异越小需要越多
     with pytest.raises(ValueError):
         required_sample_size(0.1, 0.1)
+    for args in [(0, 0.1), (0.1, 1), (0.1, 0.12, 0), (0.1, 0.12, 0.05, 1.2)]:
+        with pytest.raises(ValueError):
+            required_sample_size(*args)
+
+
+def test_input_validation():
+    with pytest.raises(ValueError):
+        sample_ratio_test(0, 0)
+    with pytest.raises(ValueError):
+        sample_ratio_test(10, 10, expected_share_a=1.0)
+    with pytest.raises(ValueError):
+        two_proportion_test(11, 10, 1, 10)              # 成功数超过样本量
 
 
 def test_sample_ratio_test():
@@ -59,8 +71,30 @@ def test_convert_removes_quotes_and_keeps_rows(tmp_path):
         '1,"2012-03-19 08:04:16",1,/home\n2,"2012-03-19 08:16:49",2,/home\n', encoding="utf-8")
     info = convert("website_pageviews", raw, stg)
     assert info["rows"] == 2
-    lines = (stg / "website_pageviews.tsv").read_text(encoding="ascii").splitlines()
+    raw_bytes = (stg / "website_pageviews.tsv").read_bytes()
+    assert raw_bytes[:2] in (b"\xff\xfe", b"\xfe\xff")         # 有 BOM，SQL Server 才按 widechar 读
+    lines = raw_bytes.decode("utf-16").split("\r\n")
     assert lines[1] == "1\t2012-03-19 08:04:16\t1\t/home"     # 引号去掉了，值没变
+
+
+def test_convert_keeps_non_ascii_text(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "products.csv").write_text("product_id,created_at,product_name\n1,2012-03-19,毛绒熊\n",
+                                      encoding="utf-8")
+    convert("products", raw, tmp_path / "stg")
+    assert "毛绒熊" in (tmp_path / "stg" / "products.tsv").read_bytes().decode("utf-16")
+
+
+@pytest.mark.parametrize("bad", ["a\tb", "a\rb", "a\nb"])
+def test_convert_rejects_separator_chars_inside_values(tmp_path, bad):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    import csv
+    with open(raw / "products.csv", "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerows([["product_id", "created_at", "product_name"], ["1", "2012-03-19", bad]])
+    with pytest.raises(ValueError, match="制表符、换行或回车"):
+        convert("products", raw, tmp_path / "stg")
 
 
 def test_convert_fails_on_wrong_column_count(tmp_path):

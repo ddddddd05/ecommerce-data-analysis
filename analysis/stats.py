@@ -35,6 +35,8 @@ def two_proportion_test(success_a: int, n_a: int, success_b: int, n_b: int,
     """双侧两比例 z 检验。检验用合并比例算标准误；置信区间用各自比例算标准误（标准做法）。"""
     if min(n_a, n_b) <= 0:
         raise ValueError("样本量必须大于 0")
+    if not (0 <= success_a <= n_a and 0 <= success_b <= n_b):
+        raise ValueError("成功数必须在 0 和样本量之间")
     pa, pb = success_a / n_a, success_b / n_b
     pooled = (success_a + success_b) / (n_a + n_b)
     se_pooled = math.sqrt(pooled * (1 - pooled) * (1 / n_a + 1 / n_b))
@@ -52,6 +54,9 @@ def required_sample_size(p_a: float, p_b: float, alpha: float = 0.05, power: flo
 
     测试开始前用它定“要跑多久”：样本不够时，即使真的有提升，也大概率测不出来。
     """
+    for name, v in (("p_a", p_a), ("p_b", p_b), ("alpha", alpha), ("power", power)):
+        if not 0 < v < 1:
+            raise ValueError(f"{name} 必须在 0 和 1 之间（不含端点），收到 {v}")
     if p_a == p_b:
         raise ValueError("两个比例相同，无法计算")
     za, zb = norm.ppf(1 - alpha / 2), norm.ppf(power)
@@ -63,6 +68,10 @@ def required_sample_size(p_a: float, p_b: float, alpha: float = 0.05, power: flo
 
 def sample_ratio_test(n_a: int, n_b: int, expected_share_a: float = 0.5) -> float:
     """卡方检验分流比例，返回 p 值。p < 0.001 视为分流异常（业界常用的严格门槛）。"""
+    if n_a < 0 or n_b < 0 or n_a + n_b == 0:
+        raise ValueError("样本量必须是非负数，且两组合计大于 0")
+    if not 0 < expected_share_a < 1:
+        raise ValueError(f"expected_share_a 必须在 0 和 1 之间（不含端点），收到 {expected_share_a}")
     total = n_a + n_b
     exp_a, exp_b = total * expected_share_a, total * (1 - expected_share_a)
     stat = (n_a - exp_a) ** 2 / exp_a + (n_b - exp_b) ** 2 / exp_b

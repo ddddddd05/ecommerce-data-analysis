@@ -77,6 +77,41 @@ UNION ALL
 SELECT N'格式', 'website_sessions', N'渠道字段写成文字 "NULL"（明细层转成空值）', N'信息', COUNT(*)
 FROM ods.website_sessions WHERE utm_source = 'NULL' OR http_referer = 'NULL';
 
+/* LIKE '%[^0-9]%' 只能发现“含非数字字符”，空字符串 ''、只有小数点 '.'、多个小数点 '1.2.3' 都会漏过，
+   到明细层 CAST 时才报错。这里单独补上（ISDATE('') = 0，时间字段的空值上面已经能查出）。 */
+INSERT dq.check_results (category, table_name, check_name, severity, failed_rows)
+SELECT N'格式', 'website_sessions', N'编号或标记为空字符串', N'阻断', COUNT(*)
+FROM ods.website_sessions
+WHERE ISNULL(website_session_id, '') = '' OR ISNULL(user_id, '') = '' OR ISNULL(is_repeat_session, '') = ''
+   OR ISNULL(device_type, '') = ''
+UNION ALL
+SELECT N'格式', 'website_pageviews', N'编号或页面地址为空字符串', N'阻断', COUNT(*)
+FROM ods.website_pageviews
+WHERE ISNULL(website_pageview_id, '') = '' OR ISNULL(website_session_id, '') = '' OR ISNULL(pageview_url, '') = ''
+UNION ALL
+SELECT N'格式', 'orders', N'编号、件数为空，或金额为空 / 只有小数点 / 多个小数点', N'阻断', COUNT(*)
+FROM ods.orders
+WHERE ISNULL(order_id, '') = '' OR ISNULL(website_session_id, '') = '' OR ISNULL(user_id, '') = ''
+   OR ISNULL(primary_product_id, '') = '' OR ISNULL(items_purchased, '') = ''
+   OR ISNULL(price_usd, '') IN ('', '.') OR price_usd LIKE '%.%.%'
+   OR ISNULL(cogs_usd, '') IN ('', '.')  OR cogs_usd LIKE '%.%.%'
+UNION ALL
+SELECT N'格式', 'order_items', N'编号为空，或金额为空 / 只有小数点 / 多个小数点', N'阻断', COUNT(*)
+FROM ods.order_items
+WHERE ISNULL(order_item_id, '') = '' OR ISNULL(order_id, '') = '' OR ISNULL(product_id, '') = ''
+   OR ISNULL(price_usd, '') IN ('', '.') OR price_usd LIKE '%.%.%'
+   OR ISNULL(cogs_usd, '') IN ('', '.')  OR cogs_usd LIKE '%.%.%'
+UNION ALL
+SELECT N'格式', 'order_item_refunds', N'编号为空，或退款金额为空 / 只有小数点 / 多个小数点', N'阻断', COUNT(*)
+FROM ods.order_item_refunds
+WHERE ISNULL(order_item_refund_id, '') = '' OR ISNULL(order_item_id, '') = '' OR ISNULL(order_id, '') = ''
+   OR ISNULL(refund_amount_usd, '') IN ('', '.') OR refund_amount_usd LIKE '%.%.%'
+UNION ALL
+SELECT N'格式', 'products', N'编号或名称为空，或上架时间无法识别', N'阻断', COUNT(*)
+FROM ods.products
+WHERE ISNULL(product_id, '') = '' OR product_id LIKE '%[^0-9]%' OR ISNULL(product_name, '') = ''
+   OR ISDATE(created_at) = 0;
+
 /* ---------- 关联：子表的编号在父表里都找得到 ---------- */
 INSERT dq.check_results (category, table_name, check_name, severity, failed_rows)
 SELECT N'关联', 'website_pageviews', N'浏览记录找不到对应的访问', N'阻断', COUNT(*)
@@ -98,6 +133,14 @@ UNION ALL
 SELECT N'关联', 'order_items', N'订单明细找不到对应的订单', N'阻断', COUNT(*)
 FROM ods.order_items i
 WHERE NOT EXISTS (SELECT 1 FROM ods.orders o WHERE o.order_id = i.order_id)
+UNION ALL
+SELECT N'关联', 'orders', N'订单没有任何明细（孤立订单）', N'阻断', COUNT(*)
+FROM ods.orders o
+WHERE NOT EXISTS (SELECT 1 FROM ods.order_items i WHERE i.order_id = o.order_id)
+UNION ALL
+SELECT N'关联', 'orders', N'订单的主商品不在商品表里', N'阻断', COUNT(*)
+FROM ods.orders o
+WHERE NOT EXISTS (SELECT 1 FROM ods.products p WHERE p.product_id = o.primary_product_id)
 UNION ALL
 SELECT N'关联', 'order_items', N'订单明细的商品不在商品表里', N'阻断', COUNT(*)
 FROM ods.order_items i

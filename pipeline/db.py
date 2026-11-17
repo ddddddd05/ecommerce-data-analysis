@@ -29,10 +29,12 @@ def _driver() -> str:
 
 
 def connect(database: str | None = DATABASE, autocommit: bool = True) -> pyodbc.Connection:
+    """调用方负责关闭：用 with closing(connect()) as conn 或 try/finally conn.close()。"""
     server = os.getenv("MSSQL_SERVER", "localhost")
+    driver = _driver()
     db = f"DATABASE={database};" if database else ""
-    extra = "TrustServerCertificate=yes;" if "ODBC Driver 18" in _driver() else ""
-    return pyodbc.connect(f"DRIVER={{{_driver()}}};SERVER={server};{db}Trusted_Connection=yes;{extra}",
+    extra = "TrustServerCertificate=yes;" if "ODBC Driver 18" in driver else ""
+    return pyodbc.connect(f"DRIVER={{{driver}}};SERVER={server};{db}Trusted_Connection=yes;{extra}",
                           autocommit=autocommit, timeout=10)
 
 

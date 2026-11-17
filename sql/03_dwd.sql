@@ -111,9 +111,19 @@ pv AS (
            MAX(CASE WHEN page_type = N'填写配送' THEN 1 ELSE 0 END)      AS reached_shipping,
            MAX(CASE WHEN page_type = N'填写支付' THEN 1 ELSE 0 END)      AS reached_billing,
            MAX(CASE WHEN page_type = N'下单成功' THEN 1 ELSE 0 END)      AS reached_thank_you,
-           MAX(CASE WHEN page_type = N'商品详情' THEN pageview_url END)  AS product_page,
-           MAX(CASE WHEN page_type = N'填写支付' THEN pageview_url END)  AS billing_page
+           SUM(CASE WHEN page_type = N'商品详情' THEN 1 ELSE 0 END)      AS product_detail_views
     FROM dwd.fact_pageview
+    GROUP BY session_id
+),
+/* 同一访问可能看了多个商品页 / 支付页：按浏览顺序取“第一个”，口径明确（用 MAX 会按字母顺序取，没有业务含义） */
+first_pages AS (
+    SELECT session_id,
+           MAX(CASE WHEN page_type = N'商品详情' AND rn = 1 THEN pageview_url END) AS first_product_page,
+           MAX(CASE WHEN page_type = N'填写支付' AND rn = 1 THEN pageview_url END) AS billing_page
+    FROM (SELECT session_id, page_type, pageview_url,
+                 ROW_NUMBER() OVER (PARTITION BY session_id, page_type ORDER BY page_seq) AS rn
+          FROM dwd.fact_pageview
+          WHERE page_type IN (N'商品详情', N'填写支付')) t
     GROUP BY session_id
 )
 SELECT s.session_id, s.user_id, s.session_start,
@@ -139,7 +149,7 @@ SELECT s.session_id, s.user_id, s.session_start,
        CASE WHEN pv.pageviews = 1 THEN 1 ELSE 0 END AS is_bounce,
        pv.reached_products, pv.reached_product_detail, pv.reached_cart,
        pv.reached_shipping, pv.reached_billing, pv.reached_thank_you,
-       pv.product_page, pv.billing_page,
+       pv.product_detail_views, fp.first_product_page, fp.billing_page,
        CASE WHEN o.order_id IS NULL THEN 0 ELSE 1 END AS has_order,
        o.order_id,
        ISNULL(o.revenue_usd, 0)      AS revenue_usd,
@@ -147,6 +157,7 @@ SELECT s.session_id, s.user_id, s.session_start,
 INTO dwd.fact_session
 FROM s
 JOIN pv ON pv.session_id = s.session_id
+LEFT JOIN first_pages fp ON fp.session_id = s.session_id
 LEFT JOIN dwd.fact_order o ON o.session_id = s.session_id;
 ALTER TABLE dwd.fact_session ADD CONSTRAINT pk_fact_session PRIMARY KEY (session_id);
 CREATE INDEX ix_session_month ON dwd.fact_session (session_month, channel);
